@@ -1,0 +1,6 @@
+{
+  "name": "SBS Transit NextBus",
+  "description": "Singapore real-time bus arrivals, live route visualizer, and transit network status powered by SBS Transit.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
