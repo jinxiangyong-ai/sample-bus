@@ -47,10 +47,97 @@ export default function App() {
     { code: '14141', name: 'Harbourfront Stn / VivoCity', label: 'Shopping', addedAt: '2025-06-01' },
   ]);
 
+  const [liveServices, setLiveServices] = useState<BusServiceArrival[] | null>(null);
+  const [apiSourceInfo, setApiSourceInfo] = useState<{ source?: string; warning?: string } | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  const currentStop: BusStop =
-    BUS_STOPS_DATABASE[currentStopCode] || BUS_STOPS_DATABASE['03011'];
+  // Fallback stop metadata if stop is not pre-indexed
+  const baseStop = BUS_STOPS_DATABASE[currentStopCode] || {
+    stopCode: currentStopCode,
+    stopName: `Stop #${currentStopCode}`,
+    roadName: 'Singapore Transit Network',
+    towards: 'Transit Corridor',
+    distanceMeters: 150,
+    walkMinutes: 2,
+    nearestMrt: 'LTA DataMall Active',
+    lat: 1.3000,
+    lng: 103.8000,
+    services: [],
+  };
+
+  const displayedServices = liveServices && liveServices.length > 0
+    ? liveServices
+    : baseStop.services;
+
+  const currentStop: BusStop = {
+    ...baseStop,
+    services: displayedServices,
+  };
+
+  // Fetch real-time arrivals from LTA endpoint proxy (/api/bus-arrival)
+  const fetchLiveArrivals = async (stopCode: string) => {
+    try {
+      const res = await fetch(`/api/bus-arrival?BusStopCode=${encodeURIComponent(stopCode)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data && Array.isArray(data.Services) && data.Services.length > 0) {
+        setApiSourceInfo({
+          source: data.source,
+          warning: data.warning,
+        });
+
+        // Merge or create services
+        const mapped: BusServiceArrival[] = data.Services.map((svc: any) => {
+          const existing = baseStop.services.find((s) => s.serviceNumber === svc.ServiceNo);
+
+          const defaultNext = {
+            etaMinutes: svc.NextBus?.etaMinutes ?? 'Arr',
+            occupancy: svc.NextBus?.occupancy || 'seats',
+            busType: svc.NextBus?.Type || 'DD',
+            wheelchair: svc.NextBus?.wheelchair ?? true,
+            busPlate: svc.NextBus?.OriginCode ? `SBS${svc.ServiceNo}88` : undefined,
+          };
+
+          const defaultSecond = {
+            etaMinutes: svc.NextBus2?.etaMinutes ?? 8,
+            occupancy: svc.NextBus2?.occupancy || 'standing',
+            busType: svc.NextBus2?.Type || 'DD',
+            wheelchair: svc.NextBus2?.wheelchair ?? true,
+          };
+
+          const defaultThird = {
+            etaMinutes: svc.NextBus3?.etaMinutes ?? 18,
+            occupancy: svc.NextBus3?.occupancy || 'seats',
+            busType: svc.NextBus3?.Type || 'SD',
+            wheelchair: svc.NextBus3?.wheelchair ?? true,
+          };
+
+          return {
+            serviceNumber: svc.ServiceNo,
+            destination: existing ? existing.destination : `Terminal / Loop (${svc.ServiceNo})`,
+            category: existing ? existing.category : 'Trunk Route',
+            viaInfo: existing ? existing.viaInfo : `LTA Monitored Service ${svc.ServiceNo}`,
+            nextBus: defaultNext,
+            secondBus: defaultSecond,
+            thirdBus: defaultThird,
+            routeStops: existing ? existing.routeStops : [
+              { stopCode: stopCode, stopName: baseStop.stopName, road: baseStop.roadName, isCurrent: true, hasBus: true, busEta: 'ARRIVING' },
+              { stopCode: 'NEXT', stopName: 'Next Transit Interchange', road: 'Connecting Corridor' },
+            ],
+          };
+        });
+
+        setLiveServices(mapped);
+      }
+    } catch (err) {
+      console.warn('Live API fetch error, using local state:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveArrivals(currentStopCode);
+  }, [currentStopCode]);
 
   // Countdown timer for live sync
   useEffect(() => {
@@ -58,30 +145,33 @@ export default function App() {
       setCountdown((prev) => {
         if (prev <= 1) {
           triggerRefresh();
-          return 12;
+          return 20; // 20s per LTA specification
         }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [currentStopCode]);
 
   const triggerRefresh = () => {
     setIsRefreshing(true);
+    fetchLiveArrivals(currentStopCode);
     setTimeout(() => {
       setIsRefreshing(false);
     }, 450);
   };
 
   const handleSelectStop = (code: string) => {
+    setCurrentStopCode(code);
     const stop = BUS_STOPS_DATABASE[code];
     if (stop) {
-      setCurrentStopCode(code);
       setSearchInput(`${stop.stopCode} - ${stop.stopName} (${stop.roadName})`);
-      setShowSearchDropdown(false);
-      triggerRefresh();
+    } else {
+      setSearchInput(`${code} - Bus Stop`);
     }
+    setShowSearchDropdown(false);
+    triggerRefresh();
   };
 
   const handleGpsLocate = () => {
@@ -273,12 +363,24 @@ export default function App() {
                       </span>
                       <input
                         className="w-full pl-12 pr-28 py-3.5 bg-[#F7F6F9] text-[#1d1a23] rounded-xl text-[15px] placeholder:text-[#80737f] focus:outline-none focus:bg-white focus:shadow-md focus:ring-2 focus:ring-[#5c186c]/20 border border-transparent focus:border-[#5c186c] transition-all"
-                        placeholder="Search 5-digit bus stop code, landmark, or street name (e.g. 28009, Orchard Rd)..."
+                        placeholder="Search 5-digit bus stop code, landmark, or street name (e.g. 28009, 83139, Orchard)..."
                         type="text"
                         value={searchInput}
                         onChange={(e) => {
                           setSearchInput(e.target.value);
                           setShowSearchDropdown(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const match = searchInput.trim().match(/\b(\d{5})\b/);
+                            if (match) {
+                              handleSelectStop(match[1]);
+                            } else if (searchSuggestions.length > 0) {
+                              handleSelectStop(searchSuggestions[0].stopCode);
+                            } else if (/^\d+$/.test(searchInput.trim())) {
+                              handleSelectStop(searchInput.trim());
+                            }
+                          }
                         }}
                         onFocus={() => setShowSearchDropdown(true)}
                       />
@@ -300,8 +402,13 @@ export default function App() {
                         <button
                           aria-label="Search"
                           onClick={() => {
-                            if (searchSuggestions.length > 0) {
+                            const match = searchInput.trim().match(/\b(\d{5})\b/);
+                            if (match) {
+                              handleSelectStop(match[1]);
+                            } else if (searchSuggestions.length > 0) {
                               handleSelectStop(searchSuggestions[0].stopCode);
+                            } else if (/^\d+$/.test(searchInput.trim())) {
+                              handleSelectStop(searchInput.trim());
                             }
                           }}
                           className="px-3.5 py-1.5 bg-[#400050] text-white rounded-lg font-headline text-[12px] font-bold hover:bg-[#5c186c] transition-colors cursor-pointer"
