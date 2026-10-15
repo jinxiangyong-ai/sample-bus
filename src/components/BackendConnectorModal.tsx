@@ -30,7 +30,7 @@ export const BackendConnectorModal: React.FC<BackendConnectorModalProps> = ({
     setTestResult(null);
 
     try {
-      const url = `${backendUrl}?BusStopCode=01012`;
+      const url = `${backendUrl}?BusStopCode=83139`;
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (ltaApiKey) headers['AccountKey'] = ltaApiKey;
 
@@ -142,11 +142,11 @@ export const BackendConnectorModal: React.FC<BackendConnectorModalProps> = ({
                 type="text"
                 value={backendUrl}
                 onChange={(e) => setBackendUrl(e.target.value)}
-                placeholder="/api/lta/arrival or http://localhost:5000/api/bus-arrival"
+                placeholder="/api/busarrival"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-100 placeholder:text-slate-600 font-mono text-xs focus:outline-none focus:border-emerald-500"
               />
               <span className="text-[11px] text-slate-500 mt-1 block">
-                Will receive queries like: <code className="text-emerald-400 font-mono">?BusStopCode=01012&ServiceNo=190</code>
+                Will receive queries like: <code className="text-emerald-400 font-mono">/api/busarrival?BusStopCode=83139</code>
               </span>
             </div>
 

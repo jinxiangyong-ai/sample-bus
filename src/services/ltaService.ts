@@ -18,7 +18,7 @@ const BOOKMARKS_STORAGE_KEY = 'sg_bus_live_bookmarks_v1';
 
 export const DEFAULT_CONFIG: LTAConfig = {
   mode: 'simulator',
-  backendUrl: '/api/lta/arrival',
+  backendUrl: '/api/busarrival',
   ltaApiKey: '',
   autoRefreshIntervalSec: 20,
 };
